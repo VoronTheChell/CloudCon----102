@@ -1,5 +1,7 @@
 #include "MockCloudProvider.h"
 
+#include <sstream>
+
 std::vector<FileItem> MockCloudProvider::list_files(const std::string& path) {
     if (path == "/") {
         return {
@@ -107,4 +109,88 @@ std::vector<FileItem> MockCloudProvider::list_files(const std::string& path) {
     }
 
     return {};
+}
+
+OperationResult MockCloudProvider::upload_file(
+    const std::string& local_path,
+    const std::string& remote_path,
+    const std::string& display_name
+) {
+    OperationResult result;
+    result.success = true;
+    result.title = "Загрузка";
+
+    std::ostringstream ss;
+    ss << "Mock-загрузка файла \"" << display_name << "\"\n\n"
+       << "Локальный путь:\n" << local_path << "\n\n"
+       << "Удалённый путь:\n" << remote_path;
+
+    result.message = ss.str();
+    return result;
+}
+
+OperationResult MockCloudProvider::download_file(
+    const std::string& remote_path,
+    const std::string& display_name
+) {
+    OperationResult result;
+    result.success = true;
+    result.title = "Скачивание";
+
+    std::ostringstream ss;
+    ss << "Mock-скачивание файла \"" << display_name << "\"\n\n"
+       << "Удалённый путь:\n" << remote_path;
+
+    result.message = ss.str();
+    return result;
+}
+
+OperationResult MockCloudProvider::delete_item(
+    const std::string& remote_path,
+    const std::string& display_name,
+    bool is_directory
+) {
+    OperationResult result;
+    result.success = true;
+    result.title = "Удаление";
+
+    std::ostringstream ss;
+    ss << "Mock-удаление " << (is_directory ? "папки" : "файла")
+       << " \"" << display_name << "\"\n\n"
+       << "Путь:\n" << remote_path;
+
+    result.message = ss.str();
+    return result;
+}
+
+OperationResult MockCloudProvider::create_share_link(
+    const std::string& remote_path,
+    const std::string& display_name
+) {
+    OperationResult result;
+    result.success = true;
+    result.title = "Ссылка создана";
+
+    std::ostringstream ss;
+    ss << "Объект: " << display_name << "\n\n"
+       << "https://mock-share.local/share?path=" << remote_path;
+
+    result.message = ss.str();
+    return result;
+}
+
+OperationResult MockCloudProvider::open_file(
+    const std::string& remote_path,
+    const std::string& display_name
+) {
+    OperationResult result;
+    result.success = true;
+    result.title = "Открытие";
+
+    std::ostringstream ss;
+    ss << "Mock-открытие файла \"" << display_name << "\"\n\n"
+       << "Путь:\n" << remote_path;
+
+    result.message = ss.str();
+    return result;
 }

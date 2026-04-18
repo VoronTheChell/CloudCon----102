@@ -1,9 +1,16 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <vector>
+
 #include "CloudProvider.h"
 
-class MockCloudProvider final : public CloudProvider {
+class LocalFsProvider final : public CloudProvider {
 public:
+    explicit LocalFsProvider(const std::string& root_path);
+
     std::vector<FileItem> list_files(const std::string& path) override;
 
     OperationResult upload_file(
@@ -32,4 +39,11 @@ public:
         const std::string& remote_path,
         const std::string& display_name
     ) override;
+
+private:
+    std::string root_path_;
+
+    std::string absolute_path_from_remote(const std::string& remote_path) const;
+    std::string remote_path_from_absolute(const std::string& absolute_path) const;
+    std::string detect_mime_type(const std::filesystem::path& path, bool is_directory) const;
 };
