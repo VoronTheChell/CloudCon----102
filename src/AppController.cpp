@@ -37,15 +37,44 @@ void AppController::initialize() {
 
     notification_manager_.initialize("cloud-client");
 
-    const char* token = std::getenv("YADISK_TOKEN");
-    const char* remote_root = std::getenv("YADISK_REMOTE_ROOT");
+    if (!config_store_.load(config_)) {
+        config_ = AppConfig{};
+    }
 
-    yandex_client_ = std::make_unique<YandexDiskClient>(
-        token ? token : "",
-        remote_root ? remote_root : "disk:/CloudClient"
-    );
+    if (const char* token = std::getenv("YADISK_TOKEN"); token && *token) {
+        config_.access_token = token;
+    }
 
+    if (const char* remote_root = std::getenv("YADISK_REMOTE_ROOT"); remote_root && *remote_root) {
+        config_.remote_root = remote_root;
+    }
+
+    if (config_.remote_root.empty()) {
+        config_.remote_root = "disk:/CloudClient";
+    }
+
+    if (config_.access_token.empty() && !config_.refresh_token.empty()) {
+        refresh_access_token_if_possible();
+    }
+
+    rebuild_yandex_client();
     load_files(true);
+
+    const bool auth_like_error =
+        last_connection_error_.find("401") != std::string::npos ||
+        last_connection_error_.find("403") != std::string::npos ||
+        last_connection_error_.find("OAuth") != std::string::npos ||
+        last_connection_error_.find("token") != std::string::npos ||
+        last_connection_error_.find("Unauthorized") != std::string::npos;
+
+    if (config_.access_token.empty() || (!online_ && auth_like_error)) {
+        window_->show_yandex_connection_dialog(
+            config_.client_id,
+            config_.client_secret,
+            config_.access_token,
+            config_.remote_root
+        );
+    }
 }
 
 const FileItem* AppController::selected_item() const {
@@ -77,11 +106,20 @@ void AppController::select_index(int index) {
 bool AppController::check_online() {
     if (!yandex_client_ || !yandex_client_->configured()) {
         online_ = false;
+        last_connection_error_ = "Не задан OAuth токен Yandex Disk.";
         return false;
     }
 
     const YandexListResult result = yandex_client_->list_directory("/");
     online_ = result.success;
+    last_connection_error_ = result.message;
+
+    if (!online_ && !config_.refresh_token.empty() && refresh_access_token_if_possible()) {
+        const YandexListResult retry = yandex_client_->list_directory("/");
+        online_ = retry.success;
+        last_connection_error_ = retry.message;
+    }
+
     return online_;
 }
 
@@ -280,6 +318,10 @@ void AppController::load_files(bool prefer_remote) {
     std::ostringstream ss;
     ss << "Статус: " << (online_ ? "онлайн" : "офлайн")
        << " • объектов: " << current_files_.size();
+
+    if (!online_ && !last_connection_error_.empty()) {
+        ss << " • причина: " << last_connection_error_;
+    }
 
     const auto pending = pending_store_.list_pending();
     if (!pending.empty()) {
@@ -958,4 +1000,139 @@ bool AppController::handle_drop_move_to_directory(const std::string& source_path
     selected_index_ = source_index;
     handle_move_selected(normalized_target);
     return true;
+}
+
+void AppController::rebuild_yandex_client() {
+    yandex_client_ = std::make_unique<YandexDiskClient>(
+        config_.access_token,
+        config_.remote_root.empty() ? "disk:/CloudClient" : config_.remote_root
+    );
+}
+
+bool AppController::refresh_access_token_if_possible() {
+    if (config_.client_id.empty() || config_.client_secret.empty() || config_.refresh_token.empty()) {
+        return false;
+    }
+
+    const YandexOAuthResult refresh = oauth_client_.refresh_access_token(
+        config_.client_id,
+        config_.client_secret,
+        config_.refresh_token
+    );
+
+    if (!refresh.success || refresh.access_token.empty()) {
+        return false;
+    }
+
+    config_.access_token = refresh.access_token;
+    if (!refresh.refresh_token.empty()) {
+        config_.refresh_token = refresh.refresh_token;
+    }
+
+    config_store_.save(config_);
+    rebuild_yandex_client();
+    return true;
+}
+
+bool AppController::apply_connection(const AppConfig& new_config, bool show_success_dialog, const std::string& success_detail) {
+    const AppConfig previous = config_;
+    config_ = new_config;
+
+    if (config_.remote_root.empty()) {
+        config_.remote_root = "disk:/CloudClient";
+    }
+
+    rebuild_yandex_client();
+    if (!check_online()) {
+        config_ = previous;
+        rebuild_yandex_client();
+        window_->show_info_dialog("Ошибка подключения", last_connection_error_.empty() ? "Не удалось подключиться к Yandex Disk." : last_connection_error_);
+        return false;
+    }
+
+    if (!config_store_.save(config_)) {
+        window_->show_info_dialog("Предупреждение", "Подключение установлено, но не удалось сохранить настройки на диск.");
+    }
+
+    current_path_ = "/";
+    load_files(true);
+
+    if (show_success_dialog) {
+        window_->show_info_dialog("Yandex Disk подключен", success_detail);
+    }
+
+    return true;
+}
+
+bool AppController::open_yandex_authorization_page(const std::string& client_id) {
+    if (client_id.empty()) {
+        window_->show_info_dialog("Нужен Client ID", "Введи Client ID приложения из Yandex OAuth, после этого я открою страницу авторизации.");
+        return false;
+    }
+
+    const std::string url = YandexOAuthClient::build_verification_code_url(client_id);
+    if (url.empty()) {
+        window_->show_info_dialog("Ошибка", "Не удалось сформировать ссылку авторизации.");
+        return false;
+    }
+
+    window_->copy_text_to_clipboard(url);
+    if (!system_integration_.open_url(url)) {
+        window_->show_info_dialog("Ошибка", "Не удалось открыть браузер. Ссылка уже скопирована в буфер обмена.");
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::connect_with_token(
+    const std::string& access_token,
+    const std::string& remote_root,
+    const std::string& client_id,
+    const std::string& client_secret
+) {
+    if (access_token.empty()) {
+        window_->show_info_dialog("Нужен токен", "Вставь готовый OAuth токен Яндекса.");
+        return false;
+    }
+
+    AppConfig candidate = config_;
+    candidate.access_token = access_token;
+    candidate.refresh_token.clear();
+    candidate.remote_root = remote_root.empty() ? "disk:/CloudClient" : remote_root;
+    if (!client_id.empty()) {
+        candidate.client_id = client_id;
+    }
+    if (!client_secret.empty()) {
+        candidate.client_secret = client_secret;
+    }
+
+    return apply_connection(candidate, true, "Токен проверен, сетевые операции снова доступны.");
+}
+
+bool AppController::connect_with_confirmation_code(
+    const std::string& client_id,
+    const std::string& client_secret,
+    const std::string& code,
+    const std::string& remote_root
+) {
+    if (client_id.empty() || client_secret.empty() || code.empty()) {
+        window_->show_info_dialog("Не хватает данных", "Для входа по коду нужны Client ID, Client Secret и код подтверждения.");
+        return false;
+    }
+
+    const YandexOAuthResult oauth = oauth_client_.exchange_code(client_id, client_secret, code);
+    if (!oauth.success) {
+        window_->show_info_dialog("OAuth ошибка", oauth.message);
+        return false;
+    }
+
+    AppConfig candidate = config_;
+    candidate.client_id = client_id;
+    candidate.client_secret = client_secret;
+    candidate.access_token = oauth.access_token;
+    candidate.refresh_token = oauth.refresh_token;
+    candidate.remote_root = remote_root.empty() ? "disk:/CloudClient" : remote_root;
+
+    return apply_connection(candidate, true, "Код обменян на токен, настройки сохранены локально.");
 }

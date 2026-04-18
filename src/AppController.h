@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "AppConfigStore.h"
 #include "CacheManager.h"
 #include "ClipboardManager.h"
 #include "FileItem.h"
@@ -12,6 +13,7 @@
 #include "PendingOperationsStore.h"
 #include "SystemIntegration.h"
 #include "YandexDiskClient.h"
+#include "YandexOAuthClient.h"
 
 class MainWindow;
 
@@ -45,6 +47,20 @@ public:
     void handle_copy_selected(const std::string& target_dir);
     void handle_move_selected(const std::string& target_dir);
 
+    bool open_yandex_authorization_page(const std::string& client_id);
+    bool connect_with_token(
+        const std::string& access_token,
+        const std::string& remote_root,
+        const std::string& client_id = "",
+        const std::string& client_secret = ""
+    );
+    bool connect_with_confirmation_code(
+        const std::string& client_id,
+        const std::string& client_secret,
+        const std::string& code,
+        const std::string& remote_root
+    );
+
     bool handle_drop_move_to_directory(const std::string& source_path, const std::string& target_directory);
     std::string ensure_local_export_path(const std::string& remote_path);
 
@@ -59,7 +75,11 @@ private:
     std::string current_path_ {"/"};
     int selected_index_ {-1};
     bool online_ {false};
+    std::string last_connection_error_;
 
+    AppConfigStore config_store_;
+    AppConfig config_;
+    YandexOAuthClient oauth_client_;
     CacheManager cache_manager_;
     MetadataStore metadata_store_;
     PendingOperationsStore pending_store_;
@@ -79,4 +99,7 @@ private:
 
     bool queue_upload(const std::string& local_path, const std::string& remote_dir, const std::string& display_name);
     bool ensure_cached_file(const FileItem& item, std::string& out_path);
+    void rebuild_yandex_client();
+    bool refresh_access_token_if_possible();
+    bool apply_connection(const AppConfig& new_config, bool show_success_dialog, const std::string& success_detail);
 };

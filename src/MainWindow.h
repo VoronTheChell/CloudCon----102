@@ -26,6 +26,12 @@ public:
     void show_move_dialog(const std::string& initial_path);
     void open_file_dialog();
     void copy_text_to_clipboard(const std::string& text);
+    void show_yandex_connection_dialog(
+        const std::string& client_id = "",
+        const std::string& client_secret = "",
+        const std::string& access_token = "",
+        const std::string& remote_root = "disk:/CloudClient"
+    );
 
 private:
     enum class TextInputAction {
@@ -57,6 +63,7 @@ private:
 
     GtkWidget* upload_button_ {};
     GtkWidget* create_button_ {};
+    GtkWidget* connect_button_ {};
 
     GtkWidget* flowbox_ {};
     GtkWidget* status_label_ {};
@@ -81,6 +88,13 @@ private:
     GtkWidget* text_input_window_ {};
     GtkWidget* text_input_entry_ {};
     TextInputAction pending_text_action_ {TextInputAction::None};
+
+    GtkWidget* yandex_connect_window_ {};
+    GtkWidget* yandex_client_id_entry_ {};
+    GtkWidget* yandex_client_secret_entry_ {};
+    GtkWidget* yandex_code_entry_ {};
+    GtkWidget* yandex_token_entry_ {};
+    GtkWidget* yandex_remote_root_entry_ {};
 
     GtkWidget* context_paste_button_ {};
 
@@ -116,6 +130,7 @@ private:
     static void on_back_clicked_static(GtkButton* button, gpointer user_data);
     static void on_upload_clicked_static(GtkButton* button, gpointer user_data);
     static void on_create_clicked_static(GtkButton* button, gpointer user_data);
+    static void on_connect_clicked_static(GtkButton* button, gpointer user_data);
 
     static void on_flowbox_selected_children_changed(GtkFlowBox* box, gpointer user_data);
     static void on_flowbox_child_activated(GtkFlowBox* box, GtkFlowBoxChild* child, gpointer user_data);
@@ -146,4 +161,9 @@ private:
     static gboolean on_tile_drop(GtkDropTarget* target, const GValue* value, double x, double y, gpointer user_data);
     static void on_context_paste_clicked(GtkButton* button, gpointer user_data);
     static gboolean on_text_input_close_request(GtkWindow* window, gpointer user_data);
+    static void on_yandex_open_auth_clicked(GtkButton* button, gpointer user_data);
+    static void on_yandex_connect_code_clicked(GtkButton* button, gpointer user_data);
+    static void on_yandex_connect_token_clicked(GtkButton* button, gpointer user_data);
+    static void on_yandex_connect_cancel_clicked(GtkButton* button, gpointer user_data);
+    static gboolean on_yandex_connect_close_request(GtkWindow* window, gpointer user_data);
 };

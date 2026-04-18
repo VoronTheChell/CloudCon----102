@@ -174,33 +174,21 @@ void MainWindow::build_sidebar() {
     create_button_ = gtk_button_new_with_label("Создать");
     gtk_widget_add_css_class(create_button_, "secondary-action");
 
+    connect_button_ = gtk_button_new_with_label("Подключить Яндекс.Диск");
+    gtk_widget_add_css_class(connect_button_, "secondary-action");
+
     GtkWidget* nav_files = gtk_button_new_with_label("Файлы");
     gtk_widget_add_css_class(nav_files, "nav-button");
     gtk_widget_add_css_class(nav_files, "active");
 
-    GtkWidget* nav_recent = gtk_button_new_with_label("Недавние");
-    gtk_widget_add_css_class(nav_recent, "nav-button");
-
-    GtkWidget* nav_shared = gtk_button_new_with_label("Общий доступ");
-    gtk_widget_add_css_class(nav_shared, "nav-button");
-
-    GtkWidget* nav_downloads = gtk_button_new_with_label("Загрузки");
-    gtk_widget_add_css_class(nav_downloads, "nav-button");
-
-    GtkWidget* nav_trash = gtk_button_new_with_label("Корзина");
-    gtk_widget_add_css_class(nav_trash, "nav-button");
-
     gtk_box_append(GTK_BOX(sidebar_), title);
     gtk_box_append(GTK_BOX(sidebar_), upload_button_);
     gtk_box_append(GTK_BOX(sidebar_), create_button_);
-    gtk_box_append(GTK_BOX(sidebar_), nav_recent);
+    gtk_box_append(GTK_BOX(sidebar_), connect_button_);
     gtk_box_append(GTK_BOX(sidebar_), nav_files);
-    gtk_box_append(GTK_BOX(sidebar_), nav_shared);
-    gtk_box_append(GTK_BOX(sidebar_), nav_downloads);
-    gtk_box_append(GTK_BOX(sidebar_), nav_trash);
-
     g_signal_connect(upload_button_, "clicked", G_CALLBACK(MainWindow::on_upload_clicked_static), this);
     g_signal_connect(create_button_, "clicked", G_CALLBACK(MainWindow::on_create_clicked_static), this);
+    g_signal_connect(connect_button_, "clicked", G_CALLBACK(MainWindow::on_connect_clicked_static), this);
 }
 
 void MainWindow::build_header() {
@@ -663,6 +651,90 @@ void MainWindow::copy_text_to_clipboard(const std::string& text) {
     gdk_clipboard_set_text(clipboard, text.c_str());
 }
 
+void MainWindow::show_yandex_connection_dialog(
+    const std::string& client_id,
+    const std::string& client_secret,
+    const std::string& access_token,
+    const std::string& remote_root
+) {
+    if (yandex_connect_window_ != nullptr) {
+        gtk_window_present(GTK_WINDOW(yandex_connect_window_));
+        return;
+    }
+
+    yandex_connect_window_ = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(yandex_connect_window_), "Подключение к Yandex Disk");
+    gtk_window_set_modal(GTK_WINDOW(yandex_connect_window_), TRUE);
+    gtk_window_set_transient_for(GTK_WINDOW(yandex_connect_window_), GTK_WINDOW(window_));
+    gtk_window_set_default_size(GTK_WINDOW(yandex_connect_window_), 560, 420);
+    gtk_window_set_resizable(GTK_WINDOW(yandex_connect_window_), FALSE);
+
+    GtkWidget* outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_margin_top(outer, 14);
+    gtk_widget_set_margin_bottom(outer, 14);
+    gtk_widget_set_margin_start(outer, 14);
+    gtk_widget_set_margin_end(outer, 14);
+
+    GtkWidget* intro = gtk_label_new(
+        "Можно вставить готовый OAuth-токен либо выполнить вход по client_id/client_secret и коду подтверждения.\n"
+        "Для получения кода у приложения в Yandex OAuth должен быть настроен Redirect URI: https://oauth.yandex.com/verification_code"
+    );
+    gtk_widget_set_halign(intro, GTK_ALIGN_START);
+    gtk_label_set_wrap(GTK_LABEL(intro), TRUE);
+
+    GtkWidget* grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+
+    auto add_row = [&](int row, const char* title, GtkWidget** out_entry, const std::string& value, bool hidden) {
+        GtkWidget* label = gtk_label_new(title);
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+
+        GtkWidget* entry = gtk_entry_new();
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_editable_set_text(GTK_EDITABLE(entry), value.c_str());
+        if (hidden) {
+            gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
+        }
+
+        gtk_grid_attach(GTK_GRID(grid), label, 0, row, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        *out_entry = entry;
+    };
+
+    add_row(0, "OAuth токен", &yandex_token_entry_, access_token, false);
+    add_row(1, "Client ID", &yandex_client_id_entry_, client_id, false);
+    add_row(2, "Client Secret", &yandex_client_secret_entry_, client_secret, true);
+    add_row(3, "Код подтверждения", &yandex_code_entry_, "", false);
+    add_row(4, "Remote root", &yandex_remote_root_entry_, remote_root.empty() ? "disk:/CloudClient" : remote_root, false);
+
+    GtkWidget* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_halign(buttons, GTK_ALIGN_END);
+
+    GtkWidget* cancel_button = gtk_button_new_with_label("Закрыть");
+    GtkWidget* open_auth_button = gtk_button_new_with_label("Открыть авторизацию");
+    GtkWidget* connect_code_button = gtk_button_new_with_label("Подключить по коду");
+    GtkWidget* connect_token_button = gtk_button_new_with_label("Сохранить токен");
+
+    gtk_box_append(GTK_BOX(buttons), cancel_button);
+    gtk_box_append(GTK_BOX(buttons), open_auth_button);
+    gtk_box_append(GTK_BOX(buttons), connect_code_button);
+    gtk_box_append(GTK_BOX(buttons), connect_token_button);
+
+    gtk_box_append(GTK_BOX(outer), intro);
+    gtk_box_append(GTK_BOX(outer), grid);
+    gtk_box_append(GTK_BOX(outer), buttons);
+    gtk_window_set_child(GTK_WINDOW(yandex_connect_window_), outer);
+
+    g_signal_connect(cancel_button, "clicked", G_CALLBACK(MainWindow::on_yandex_connect_cancel_clicked), this);
+    g_signal_connect(open_auth_button, "clicked", G_CALLBACK(MainWindow::on_yandex_open_auth_clicked), this);
+    g_signal_connect(connect_code_button, "clicked", G_CALLBACK(MainWindow::on_yandex_connect_code_clicked), this);
+    g_signal_connect(connect_token_button, "clicked", G_CALLBACK(MainWindow::on_yandex_connect_token_clicked), this);
+    g_signal_connect(yandex_connect_window_, "close-request", G_CALLBACK(MainWindow::on_yandex_connect_close_request), this);
+
+    gtk_window_present(GTK_WINDOW(yandex_connect_window_));
+}
+
 void MainWindow::on_back_clicked_static(GtkButton* /*button*/, gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
     self->controller_->navigate_up();
@@ -676,6 +748,11 @@ void MainWindow::on_upload_clicked_static(GtkButton* /*button*/, gpointer user_d
 void MainWindow::on_create_clicked_static(GtkButton* /*button*/, gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
     self->show_create_folder_dialog();
+}
+
+void MainWindow::on_connect_clicked_static(GtkButton* /*button*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->show_yandex_connection_dialog();
 }
 
 void MainWindow::on_flowbox_selected_children_changed(GtkFlowBox* box, gpointer user_data) {
@@ -955,6 +1032,89 @@ gboolean MainWindow::on_drop_perform(GtkDropTarget* /*target*/, const GValue* va
     }
 
     self->set_status("Статус: неподдерживаемый формат drop");
+    return FALSE;
+}
+
+void MainWindow::on_yandex_open_auth_clicked(GtkButton* /*button*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    const char* client_id = self->yandex_client_id_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_client_id_entry_))
+        : "";
+
+    if (!self->controller_->open_yandex_authorization_page(client_id ? client_id : "")) {
+        return;
+    }
+
+    self->show_info_dialog(
+        "Авторизация открыта",
+        "Ссылка открыта в браузере и скопирована в буфер обмена. После входа Яндекс покажет код подтверждения — вставь его в поле 'Код подтверждения'."
+    );
+}
+
+void MainWindow::on_yandex_connect_code_clicked(GtkButton* /*button*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+
+    const std::string client_id = self->yandex_client_id_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_client_id_entry_))
+        : "";
+    const std::string client_secret = self->yandex_client_secret_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_client_secret_entry_))
+        : "";
+    const std::string code = self->yandex_code_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_code_entry_))
+        : "";
+    const std::string remote_root = self->yandex_remote_root_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_remote_root_entry_))
+        : "disk:/CloudClient";
+
+    if (self->controller_->connect_with_confirmation_code(client_id, client_secret, code, remote_root)) {
+        if (self->yandex_connect_window_ != nullptr) {
+            gtk_window_destroy(GTK_WINDOW(self->yandex_connect_window_));
+            self->yandex_connect_window_ = nullptr;
+        }
+    }
+}
+
+void MainWindow::on_yandex_connect_token_clicked(GtkButton* /*button*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+
+    const std::string token = self->yandex_token_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_token_entry_))
+        : "";
+    const std::string client_id = self->yandex_client_id_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_client_id_entry_))
+        : "";
+    const std::string client_secret = self->yandex_client_secret_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_client_secret_entry_))
+        : "";
+    const std::string remote_root = self->yandex_remote_root_entry_
+        ? gtk_editable_get_text(GTK_EDITABLE(self->yandex_remote_root_entry_))
+        : "disk:/CloudClient";
+
+    if (self->controller_->connect_with_token(token, remote_root, client_id, client_secret)) {
+        if (self->yandex_connect_window_ != nullptr) {
+            gtk_window_destroy(GTK_WINDOW(self->yandex_connect_window_));
+            self->yandex_connect_window_ = nullptr;
+        }
+    }
+}
+
+void MainWindow::on_yandex_connect_cancel_clicked(GtkButton* /*button*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->yandex_connect_window_ != nullptr) {
+        gtk_window_destroy(GTK_WINDOW(self->yandex_connect_window_));
+        self->yandex_connect_window_ = nullptr;
+    }
+}
+
+gboolean MainWindow::on_yandex_connect_close_request(GtkWindow* /*window*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->yandex_connect_window_ = nullptr;
+    self->yandex_client_id_entry_ = nullptr;
+    self->yandex_client_secret_entry_ = nullptr;
+    self->yandex_code_entry_ = nullptr;
+    self->yandex_token_entry_ = nullptr;
+    self->yandex_remote_root_entry_ = nullptr;
     return FALSE;
 }
 

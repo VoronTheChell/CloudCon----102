@@ -24,6 +24,8 @@ add_executable(cloud_client
     src/NotificationManager.cpp
     src/ImagePreviewWindow.cpp
     src/ClipboardManager.cpp
+    src/AppConfigStore.cpp
+    src/YandexOAuthClient.cpp
 )
 
 target_include_directories(cloud_client PRIVATE src)
