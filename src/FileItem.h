@@ -12,4 +12,5 @@ struct FileItem {
     std::string mime_type;
     std::string modified_at;
     bool is_cached {false};
+    std::string local_preview_path;
 };

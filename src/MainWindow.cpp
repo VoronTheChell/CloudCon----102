@@ -6,6 +6,12 @@
 #include <pango/pango.h>
 #include <sstream>
 
+namespace {
+bool can_render_image_preview(const FileItem& item) {
+    return !item.is_directory && !item.local_preview_path.empty();
+}
+}
+
 MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     build_ui();
     controller_ = std::make_unique<AppController>(this);
@@ -129,6 +135,16 @@ void MainWindow::load_css() {
             color: #b6bbc8;
         }
 
+        .tile-preview-frame {
+            background: alpha(#ffffff, 0.05);
+            border-radius: 18px;
+            padding: 4px;
+        }
+
+        .tile-preview {
+            border-radius: 14px;
+        }
+
         .status-bar {
             color: #b8bcc8;
             font-size: 12px;
@@ -186,6 +202,7 @@ void MainWindow::build_sidebar() {
     gtk_box_append(GTK_BOX(sidebar_), create_button_);
     gtk_box_append(GTK_BOX(sidebar_), connect_button_);
     gtk_box_append(GTK_BOX(sidebar_), nav_files);
+
     g_signal_connect(upload_button_, "clicked", G_CALLBACK(MainWindow::on_upload_clicked_static), this);
     g_signal_connect(create_button_, "clicked", G_CALLBACK(MainWindow::on_create_clicked_static), this);
     g_signal_connect(connect_button_, "clicked", G_CALLBACK(MainWindow::on_connect_clicked_static), this);
@@ -404,14 +421,36 @@ GtkWidget* MainWindow::create_file_tile(const FileItem& item) {
     gtk_widget_set_valign(child_box, GTK_ALIGN_START);
     gtk_widget_set_size_request(child_box, 160, 160);
 
-    GtkWidget* icon = gtk_label_new(item.is_directory ? "📁" : "📄");
-    gtk_widget_set_halign(icon, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(icon, 8);
+    GtkWidget* visual = nullptr;
 
-    PangoAttrList* attrs = pango_attr_list_new();
-    pango_attr_list_insert(attrs, pango_attr_scale_new(3.0));
-    gtk_label_set_attributes(GTK_LABEL(icon), attrs);
-    pango_attr_list_unref(attrs);
+    if (can_render_image_preview(item)) {
+        GtkWidget* preview_frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_widget_set_halign(preview_frame, GTK_ALIGN_CENTER);
+        gtk_widget_set_margin_top(preview_frame, 8);
+        gtk_widget_set_size_request(preview_frame, 128, 96);
+        gtk_widget_add_css_class(preview_frame, "tile-preview-frame");
+
+        GtkWidget* picture = gtk_picture_new_for_filename(item.local_preview_path.c_str());
+        gtk_picture_set_can_shrink(GTK_PICTURE(picture), TRUE);
+        gtk_picture_set_content_fit(GTK_PICTURE(picture), GTK_CONTENT_FIT_CONTAIN);
+        gtk_widget_set_size_request(picture, 120, 88);
+        gtk_widget_set_hexpand(picture, TRUE);
+        gtk_widget_set_vexpand(picture, TRUE);
+        gtk_widget_add_css_class(picture, "tile-preview");
+
+        gtk_box_append(GTK_BOX(preview_frame), picture);
+        visual = preview_frame;
+    } else {
+        GtkWidget* icon = gtk_label_new(item.is_directory ? "📁" : "📄");
+        gtk_widget_set_halign(icon, GTK_ALIGN_CENTER);
+        gtk_widget_set_margin_top(icon, 8);
+
+        PangoAttrList* attrs = pango_attr_list_new();
+        pango_attr_list_insert(attrs, pango_attr_scale_new(3.0));
+        gtk_label_set_attributes(GTK_LABEL(icon), attrs);
+        pango_attr_list_unref(attrs);
+        visual = icon;
+    }
 
     GtkWidget* name = gtk_label_new(item.name.c_str());
     gtk_label_set_wrap(GTK_LABEL(name), TRUE);
@@ -432,7 +471,7 @@ GtkWidget* MainWindow::create_file_tile(const FileItem& item) {
     gtk_widget_set_halign(meta_label, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(meta_label, "tile-meta");
 
-    gtk_box_append(GTK_BOX(child_box), icon);
+    gtk_box_append(GTK_BOX(child_box), visual);
     gtk_box_append(GTK_BOX(child_box), name);
     gtk_box_append(GTK_BOX(child_box), meta_label);
 

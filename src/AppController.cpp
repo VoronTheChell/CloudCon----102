@@ -13,6 +13,28 @@ bool str_ends_with(const std::string& value, const std::string& suffix) {
     return value.size() >= suffix.size() &&
            value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
+
+bool looks_like_image(const FileItem& item) {
+    return !item.is_directory && (
+        item.mime_type.rfind("image/", 0) == 0 ||
+        str_ends_with(item.path, ".png") ||
+        str_ends_with(item.path, ".jpg") ||
+        str_ends_with(item.path, ".jpeg") ||
+        str_ends_with(item.path, ".webp") ||
+        str_ends_with(item.path, ".bmp") ||
+        str_ends_with(item.path, ".gif")
+    );
+}
+
+void apply_preview_path(FileItem& item, CacheManager& cache_manager) {
+    if (looks_like_image(item) && cache_manager.is_cached(item.path)) {
+        item.local_preview_path = cache_manager.cached_file_path(item.path);
+        item.is_cached = true;
+        return;
+    }
+
+    item.local_preview_path.clear();
+}
 }
 
 AppController::AppController(MainWindow* window)
@@ -210,16 +232,7 @@ void AppController::load_files(bool prefer_remote) {
                     continue;
                 }
 
-                const bool looks_like_image =
-                    item.mime_type.rfind("image/", 0) == 0 ||
-                    str_ends_with(item.path, ".png") ||
-                    str_ends_with(item.path, ".jpg") ||
-                    str_ends_with(item.path, ".jpeg") ||
-                    str_ends_with(item.path, ".webp") ||
-                    str_ends_with(item.path, ".bmp") ||
-                    str_ends_with(item.path, ".gif");
-
-                if (!looks_like_image) {
+                if (!looks_like_image(item)) {
                     continue;
                 }
 
@@ -239,6 +252,9 @@ void AppController::load_files(bool prefer_remote) {
             }
 
             apply_cache_flags();
+            for (auto& item : current_files_) {
+                apply_preview_path(item, cache_manager_);
+            }
             persist_current_directory_snapshot();
         } else if (result.not_found) {
             current_path_ = "/";
@@ -254,16 +270,7 @@ void AppController::load_files(bool prefer_remote) {
                         continue;
                     }
 
-                    const bool looks_like_image =
-                        item.mime_type.rfind("image/", 0) == 0 ||
-                        str_ends_with(item.path, ".png") ||
-                        str_ends_with(item.path, ".jpg") ||
-                        str_ends_with(item.path, ".jpeg") ||
-                        str_ends_with(item.path, ".webp") ||
-                        str_ends_with(item.path, ".bmp") ||
-                        str_ends_with(item.path, ".gif");
-
-                    if (!looks_like_image) {
+                    if (!looks_like_image(item)) {
                         continue;
                     }
 
@@ -283,6 +290,9 @@ void AppController::load_files(bool prefer_remote) {
                 }
 
                 apply_cache_flags();
+                for (auto& item : current_files_) {
+                    apply_preview_path(item, cache_manager_);
+                }
                 persist_current_directory_snapshot();
             } else {
                 current_files_.clear();
@@ -307,6 +317,7 @@ void AppController::load_files(bool prefer_remote) {
             item.mime_type = entry.mime_type;
             item.modified_at = entry.modified_at;
             item.is_cached = entry.is_cached;
+            apply_preview_path(item, cache_manager_);
             current_files_.push_back(item);
         }
     }
